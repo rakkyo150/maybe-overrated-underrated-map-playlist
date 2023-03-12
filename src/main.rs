@@ -1,5 +1,4 @@
-use reqwest::Error;
-use reqwest::header::{HeaderValue, AUTHORIZATION, USER_AGENT};
+use reqwest::header::{HeaderValue, AUTHORIZATION};
 use dotenv::dotenv;
 use std::env;
 use serde_json::json;
@@ -24,10 +23,9 @@ fn get_ranked_map_data() -> eyre::Result<()> {
 
     let token = env::var("GITHUB_TOKEN")?;
 
-    let user_agent = HeaderValue::from_str("@rakkyo150")?;
     let auth_value = HeaderValue::from_str(&format!("Bearer {}", token))?;
 
-    let release_url = get_release_url(&auth_value, user_agent)?;
+    let release_url = "https://github.com/rakkyo150/RankedMapData/releases/latest/download/outcome.csv";
     
     let csv_rdr = make_csv_reader(&release_url, &auth_value);
 
@@ -91,15 +89,6 @@ fn make_csv_reader(release_url: &str, auth_value: &HeaderValue) -> csv::Reader<r
                             .delimiter(b',')
                             .from_reader(response_csv);
     csv_rdr
-}
-
-fn get_release_url(auth_value: &HeaderValue, user_agent: HeaderValue) -> Result<String, Error> {
-    let ranked_map_data_releases = "https://api.github.com/repos/rakkyo150/RankedMapData/releases";
-    let client = reqwest::blocking::Client::new();
-    let response = client.get(ranked_map_data_releases).header(AUTHORIZATION, auth_value).header(USER_AGENT, user_agent).send()?;
-    let response_releases: Value = serde_json::from_str(response.text()?.as_str()).unwrap();
-    let release_url = response_releases[0]["assets"][0]["browser_download_url"].as_str().unwrap();
-    Ok(release_url.to_string())
 }
 
 fn update_and_classify_data (previous_hash: &String,record: &type_info::MapData, mut overrated_difficulties: Vec<type_info::Difficulties>, mut overrated_songs: Vec<type_info::Songs>, mut underrated_difficulties: Vec<type_info::Difficulties>, mut underrated_songs: Vec<type_info::Songs>, mut json_result: Value) -> (String, Vec<type_info::Difficulties>, Vec<type_info::Songs>, Vec<type_info::Difficulties>, Vec<type_info::Songs>, Value) {    
@@ -180,7 +169,8 @@ fn add_and_clear_difficulties(record: &type_info::MapData, difficulties: &mut Ve
 fn get_predicted_values(record: &type_info::MapData) -> Value {
     let url = format!("https://predictstarnumber.onrender.com/api2/hash/{}", record.hash);
 
-    let client = reqwest::blocking::Client::new();
+    // サーバーの再起動が結構長いので
+    let client = reqwest::blocking::Client::builder().timeout(Duration::from_secs(300)).build().unwrap();
         
     let response = match client.get(url).send() {
         Ok(response) => response,
