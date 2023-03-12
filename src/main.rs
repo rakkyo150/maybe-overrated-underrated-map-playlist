@@ -10,15 +10,7 @@ use serde_json::value::Value;
 
 mod type_info;
 
-fn main() {
-    let result = get_ranked_map_data();
-    match  result {
-        Ok(())=> println!("Finish!"),
-        Err(err) => println!("Error: {}",err)
-    };
-}
-
-fn get_ranked_map_data() -> eyre::Result<()> {
+fn main() -> eyre::Result<()>{
     dotenv()?;
 
     let token = env::var("GITHUB_TOKEN")?;
