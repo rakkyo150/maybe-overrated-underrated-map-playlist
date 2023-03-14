@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::mem::MaybeUninit;
 
 #[derive(Debug, Deserialize)]
 #[allow(dead_code, non_snake_case)]
@@ -65,9 +66,65 @@ pub struct MapData{
 
 #[derive(Debug, Serialize)]
 #[allow(non_snake_case)]
+pub struct Playlists{
+    pub overrated_playlist: [Playlist; 15],
+    pub underrated_playlist: [Playlist; 15],
+}
+
+impl Playlists {
+    pub fn new() -> Playlists{
+        // https://tyfkda.github.io/blog/2020/03/19/rust-init-array.html
+        // PlaylistにCopyトレイトが実装されていないので[要素; 要素数]が使えない
+        const LEN: usize = 15;
+        // 未初期化の領域を確保
+        let mut unsafe_overrated_playlist: [MaybeUninit<Playlist>; LEN] = unsafe { MaybeUninit::uninit().assume_init() };
+        for (i, slot) in unsafe_overrated_playlist.iter_mut().enumerate() {
+            // 初期化する
+            *slot = MaybeUninit::new(Playlist {playlistTitle: format!("Overrated Playlist {}★", i), songs: vec![] });
+        }
+        let overrated_playlists = unsafe{ std::mem::transmute::<_, [Playlist; LEN]>(unsafe_overrated_playlist) };
+
+        let mut unsafe_underrated_playlist: [MaybeUninit<Playlist>; LEN] = unsafe { MaybeUninit::uninit().assume_init() };
+        for (i, slot) in unsafe_underrated_playlist.iter_mut().enumerate() {
+            // 初期化する
+            *slot = MaybeUninit::new(Playlist {playlistTitle: format!("Underrated Playlist {}★", i), songs: vec![] });
+        }
+        let underrated_playlists = unsafe{ std::mem::transmute::<_, [Playlist; LEN]>(unsafe_underrated_playlist) };
+
+        let playlists = Playlists {
+            overrated_playlist: overrated_playlists,
+            underrated_playlist: underrated_playlists,
+        };
+
+        playlists
+    }
+
+    pub fn search_playlist(&mut self, rank: &f64) -> Result<(&mut Playlist, &mut Playlist), String> {
+        let rank_i32 = rank.floor() as i32;
+        if 0 <= rank_i32 && rank_i32 < 15 {
+            Ok((&mut self.overrated_playlist[*rank as usize], &mut self.underrated_playlist[*rank as usize]))
+        } else {
+            Err(String::from("No rank number"))
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[allow(non_snake_case)]
 pub struct Playlist{
     pub playlistTitle: String,
     pub songs: Vec<Songs>,
+}
+
+impl Playlist{
+    pub fn search_songs(&mut self, songName: &str, hash: &str) -> Option<&mut Songs>{
+        for value in &mut self.songs {
+            if value.songName == songName.to_string() && value.hash == hash.to_string(){
+                return Some(value);
+            }
+        }
+        None
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -76,6 +133,17 @@ pub struct Songs{
     pub songName: String,
     pub difficulties: Vec<Difficulties>,
     pub hash: String,
+}
+
+impl Songs{
+    pub fn search_difficulties(&mut self, difficulty_name: &str) -> Option<&mut Difficulties>{
+        for value in &mut self.difficulties{
+            if value.name == difficulty_name.to_string(){
+                return Some(value);
+            }
+        }
+        None
+    }
 }
 
 #[derive(Debug, Serialize, Clone)]

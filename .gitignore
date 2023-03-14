@@ -1,4 +1,4 @@
 /target
 .env
-overrated.json
-underrated.json
+overrated_playlist_*.json
+underrated_playlist_*.json

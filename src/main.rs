@@ -12,7 +12,7 @@ mod type_info;
 
 fn main() -> eyre::Result<()>{
     dotenv()?;
-
+    
     let token = env::var("GITHUB_TOKEN")?;
 
     let auth_value = HeaderValue::from_str(&format!("Bearer {}", token))?;
@@ -21,20 +21,20 @@ fn main() -> eyre::Result<()>{
     
     let csv_rdr = make_csv_reader(&release_url, &auth_value);
 
-    let (overrated_songs, underrated_songs) = get_predicted_values_and_classify_data(csv_rdr)?;
+    let mut playlists = get_predicted_values_and_classify_data(csv_rdr)?;
 
-    make_playlist(overrated_songs, underrated_songs)?;
+    make_playlist(&mut playlists)?;
 
     Ok(())
 }
 
-fn get_predicted_values_and_classify_data(mut csv_rdr: csv::Reader<reqwest::blocking::Response>) -> Result<(Vec<type_info::Songs>, Vec<type_info::Songs>), eyre::ErrReport> {
-    let mut overrated_songs: Vec<type_info::Songs> = Vec::new();
-    let mut underrated_songs: Vec<type_info::Songs> = Vec::new();
-    let mut overrated_difficulties: Vec<type_info::Difficulties> = Vec::new();
-    let mut underrated_difficulties: Vec<type_info::Difficulties> = Vec::new();
+fn get_predicted_values_and_classify_data(mut csv_rdr: csv::Reader<reqwest::blocking::Response>) -> Result<type_info::Playlists, eyre::ErrReport> {
     let mut previous_hash = String::new();
-    let mut json_result: Value = json!(0);
+    let mut json_result=json!(0);
+
+    let mut playlists = type_info::Playlists::new();
+
+
     for record_result in csv_rdr.records() {
         let record: type_info::MapData = match record_result{
             Ok(val) => {
@@ -46,26 +46,55 @@ fn get_predicted_values_and_classify_data(mut csv_rdr: csv::Reader<reqwest::bloc
             }
         };
 
-        (previous_hash, overrated_difficulties, overrated_songs, underrated_difficulties, underrated_songs, json_result) = update_and_classify_data(&previous_hash ,&record, overrated_difficulties, overrated_songs, underrated_difficulties, underrated_songs, json_result);
+        if previous_hash != record.hash{
+            println!("index-{}, hash-{}", record.index, record.hash);
+            json_result = get_predicted_values(&record);
+        }
+
+        let difficulties = make_difficulties(&record, &json_result);
+        add_difficulties_to_playlists(&mut playlists, &record, difficulties);
+
+        previous_hash = record.hash;
     }
-    Ok((overrated_songs, underrated_songs))
+
+    Ok(playlists)
 }
 
-fn make_playlist(overrated_songs: Vec<type_info::Songs>, underrated_songs: Vec<type_info::Songs>) -> Result<(), eyre::ErrReport> {
-    let overrated_playlist = type_info::Playlist{
-        playlistTitle: "Overrated Playlist".to_string(),
-        songs : overrated_songs
-    };
-    let underrated_playlist = type_info::Playlist{
-        playlistTitle: "Underrated Playlist".to_string(),
-        songs: underrated_songs
-    };
-    let serialized_overrated_playlist = serde_json::to_string_pretty(&overrated_playlist)?;
-    let serialized_underrated_playlist = serde_json::to_string_pretty(&underrated_playlist)?;
-    let mut file = File::create("./overrated.json")?;
-    file.write_all(serialized_overrated_playlist.as_bytes())?;
-    let mut file = File::create("./underrated.json")?;
-    file.write_all(serialized_underrated_playlist.as_bytes())?;
+fn add_difficulties_to_playlists(playlists: &mut type_info::Playlists, record: &type_info::MapData, difficulties: type_info::Difficulties){
+    let (overrated_playlist, underrated_playlist) = playlists.search_playlist(&record.stars).unwrap();
+
+    let targeted_playlist: &mut type_info::Playlist;
+
+    if difficulties.diff > 0.0{
+        targeted_playlist = overrated_playlist;
+    }
+    else{
+        targeted_playlist = underrated_playlist;
+    }
+
+    match targeted_playlist.search_songs(record.name.as_str(), record.hash.as_str()){
+        Some(targeted_songs) => targeted_songs.difficulties.push(difficulties),
+        None => {
+            let tmp_song = type_info::Songs{
+                songName: record.name.to_string(),
+                difficulties: vec![difficulties],
+                hash: record.hash.to_string()
+            };
+            targeted_playlist.songs.push(tmp_song);
+        }
+    }
+}
+
+fn make_playlist(playlists: &mut type_info::Playlists) -> Result<(), eyre::ErrReport> {
+    for index in 0..15{
+        let (overrated_playlist,underrated_playlist) = playlists.search_playlist(&(index as f64)).unwrap();
+        let serialized_overrated_playlist = serde_json::to_string_pretty(&overrated_playlist)?;
+        let serialized_underrated_playlist = serde_json::to_string_pretty(&underrated_playlist)?;
+        let mut file = File::create(format!("./overrated_playlist_{}.json", index))?;
+        file.write_all(serialized_overrated_playlist.as_bytes())?;
+        let mut file = File::create(format!("./underrated_playlist_{}.json", index))?;
+        file.write_all(serialized_underrated_playlist.as_bytes())?;
+    }
     Ok(())
 }
 
@@ -83,79 +112,24 @@ fn make_csv_reader(release_url: &str, auth_value: &HeaderValue) -> csv::Reader<r
     csv_rdr
 }
 
-fn update_and_classify_data (previous_hash: &String,record: &type_info::MapData, mut overrated_difficulties: Vec<type_info::Difficulties>, mut overrated_songs: Vec<type_info::Songs>, mut underrated_difficulties: Vec<type_info::Difficulties>, mut underrated_songs: Vec<type_info::Songs>, mut json_result: Value) -> (String, Vec<type_info::Difficulties>, Vec<type_info::Songs>, Vec<type_info::Difficulties>, Vec<type_info::Songs>, Value) {    
-    println!("index : {}",record.index);
 
-    if *previous_hash != record.hash {
-        thread::sleep(Duration::from_secs(1));
-        json_result = get_predicted_values(record);
-    }
+fn make_difficulties(record: &type_info::MapData, json_result: &Value) -> type_info::Difficulties {
+    let predicted_values = match record.difficulty.as_str() {
+        "Easy" => json_result["Standard-Easy"].as_f64().unwrap(),
+        "Normal" => json_result["Standard-Normal"].as_f64().unwrap(),
+        "Hard" => json_result["Standard-Hard"].as_f64().unwrap(),
+        "Expert" => json_result["Standard-Expert"].as_f64().unwrap(),
+        "ExpertPlus" => json_result["Standard-ExpertPlus"].as_f64().unwrap(),
+        &_ => 0.0
+    };
 
-    let tmp_difficulties = make_tmp_difficulties(record, &json_result);
-
-    if tmp_difficulties.diff > 0.0{
-        println!("overrated: hash-{} , diff-{}", record.hash ,tmp_difficulties.diff);
-        if *previous_hash != record.hash{
-            add_and_clear_all_difficulties(&mut overrated_difficulties, record, previous_hash, &mut overrated_songs, &mut underrated_difficulties, &mut underrated_songs);
-        }
-        overrated_difficulties.push(tmp_difficulties);
-    }
-    else{
-        println!("underrated: hash-{} , diff-{}", record.hash ,tmp_difficulties.diff);
-        if *previous_hash != record.hash{
-            add_and_clear_all_difficulties(&mut overrated_difficulties, record, previous_hash, &mut overrated_songs, &mut underrated_difficulties, &mut underrated_songs);
-        }
-        underrated_difficulties.push(tmp_difficulties);
-    }
-
-    (record.hash.to_string(), overrated_difficulties, overrated_songs, underrated_difficulties, underrated_songs, json_result)
-}
-
-fn make_tmp_difficulties(record: &type_info::MapData, json_result: &Value) -> type_info::Difficulties {
-    let mut predicted_values: f64 = 0.0;
-
-    if record.difficulty == "Easy" {
-        predicted_values = json_result["Standard-Easy"].as_f64().unwrap();
-    }
-    else if record.difficulty == "Normal" {
-        predicted_values = json_result["Standard-Normal"].as_f64().unwrap();
-    }
-    else if record.difficulty == "Hard" {
-        predicted_values = json_result["Standard-Hard"].as_f64().unwrap();
-    }
-    else if record.difficulty == "Expert" {
-        predicted_values = json_result["Standard-Expert"].as_f64().unwrap();
-    }
-    else if record.difficulty == "ExpertPlus" {
-        predicted_values = json_result["Standard-ExpertPlus"].as_f64().unwrap();
-    }
-
-    let tmp_difficulties = type_info::Difficulties{
+    let difficulties = type_info::Difficulties{
         name: record.difficulty.to_string(),
         characteristic: record.characteristic.to_string(),
         diff: record.stars - predicted_values
     };
-    tmp_difficulties
-}
 
-fn add_and_clear_all_difficulties(overrated_difficulties: &mut Vec<type_info::Difficulties>, record: &type_info::MapData, previous_hash: &String, overrated_songs: &mut Vec<type_info::Songs>, underrated_difficulties: &mut Vec<type_info::Difficulties>, underrated_songs: &mut Vec<type_info::Songs>) {
-    if overrated_difficulties.len() != 0{
-        add_and_clear_difficulties(record, overrated_difficulties, previous_hash, overrated_songs);
-    }
-    
-    if underrated_difficulties.len() != 0{
-        add_and_clear_difficulties(record, underrated_difficulties, previous_hash, underrated_songs);
-    }
-}
-
-fn add_and_clear_difficulties(record: &type_info::MapData, difficulties: &mut Vec<type_info::Difficulties>, previous_hash: &String, songs: &mut Vec<type_info::Songs>) {
-    let tmp_songs = type_info::Songs{
-        songName: record.name.to_string(),
-        difficulties: difficulties.to_vec(),
-        hash: previous_hash.to_string()
-    };
-    songs.push(tmp_songs);
-    difficulties.clear();
+    difficulties
 }
 
 fn get_predicted_values(record: &type_info::MapData) -> Value {
@@ -164,6 +138,7 @@ fn get_predicted_values(record: &type_info::MapData) -> Value {
     // サーバーの再起動が結構長いので
     let client = reqwest::blocking::Client::builder().timeout(Duration::from_secs(300)).build().unwrap();
         
+    thread::sleep(Duration::from_secs(1));
     let response = match client.get(url).send() {
         Ok(response) => response,
         Err(e) => panic!("Error: {}", e),
