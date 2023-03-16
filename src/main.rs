@@ -10,6 +10,7 @@ use std::time::Duration;
 use serde_json::value::Value;
 use std::path::Path;
 use zip::write::{FileOptions, ZipWriter};
+use std::result::Result;
 
 mod map_and_playlist;
 
@@ -26,7 +27,7 @@ fn main() -> eyre::Result<()>{
 
     let mut playlists = get_predicted_values_and_classify_data(csv_rdr)?;
 
-    make_playlists(&mut playlists)?;
+    make_sorted_playlists(&mut playlists)?;
 
     Ok(())
 }
@@ -61,6 +62,8 @@ fn get_predicted_values_and_classify_data(mut csv_rdr: csv::Reader<reqwest::bloc
         }
 
         previous_hash = record.hash;
+
+        // break;
     }
 
     Ok(playlists)
@@ -103,7 +106,7 @@ fn add_difficulties_to_playlists(playlists: &mut map_and_playlist::Playlists, re
     }
 }
 
-fn make_playlists(playlists: &mut map_and_playlist::Playlists) -> Result<(), eyre::ErrReport> {
+fn make_sorted_playlists(playlists: &mut map_and_playlist::Playlists) -> Result<(), eyre::ErrReport> {
     let mut file_paths: Vec<String> = vec![];
 
     for index in 0..15{
@@ -115,6 +118,13 @@ fn make_playlists(playlists: &mut map_and_playlist::Playlists) -> Result<(), eyr
         let fairly_underrated_playlist_name = format!("./fairly_underrated_playlist_{}.json", index);
         let very_underrated_playlist_name = format!("./very_underrated_playlist_{}.json", index);
 
+        overrated_playlist.a_little_version.sort();
+        overrated_playlist.fairly_version.sort();
+        overrated_playlist.very_version.sort();
+        underrated_playlist.a_little_version.sort();
+        underrated_playlist.fairly_version.sort();
+        underrated_playlist.very_version.sort();
+        
         make_playlist(&overrated_playlist.a_little_version, &a_little_overrated_playlist_name)?;
         make_playlist(&overrated_playlist.fairly_version, &fairly_overrated_playlist_name)?;
         make_playlist(&overrated_playlist.very_version, &very_overrated_playlist_name)?;
@@ -128,9 +138,9 @@ fn make_playlists(playlists: &mut map_and_playlist::Playlists) -> Result<(), eyr
     let zip_file_path = "./all.zip";
 
     if let Err(error) = create_zip(&file_paths, zip_file_path) {
-        println!("Error: {:?}", error);
+        println!("Error creating the zip file: {:?}", error);
     } else {
-        println!("Archive created successfully.")
+        println!("The zip file created successfully.")
     }
     Ok(())
 }
@@ -150,6 +160,10 @@ fn create_zip(file_paths: &[String], zip_file_path: &str) -> Result<(), Error> {
     };
     let mut zip = ZipWriter::new(file);
 
+    let options = FileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored)
+            .unix_permissions(0o755);
+
     for file_path in file_paths {
         let single_file_path = Path::new(file_path);
         let mut file = match File::open(&single_file_path) {
@@ -159,13 +173,12 @@ fn create_zip(file_paths: &[String], zip_file_path: &str) -> Result<(), Error> {
         let mut contents = vec![];
         let _ = file.read_to_end(&mut contents);
 
-        let options = FileOptions::default()
-            .compression_method(zip::CompressionMethod::Deflated)
-            .unix_permissions(0o755);
-
-        zip.start_file(single_file_path.to_string_lossy().to_string(), options)?;
+        zip.start_file(single_file_path.to_string_lossy()[2..].to_string(), options)?;
         let _ = zip.write_all(&contents);
     }
+
+    let _ = zip.finish();
+
     Ok(())
 }
 

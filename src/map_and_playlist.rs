@@ -142,6 +142,24 @@ impl Playlist{
         }
         None
     }
+
+    pub fn sort(&mut self){
+        if self.songs.len() == 0 { return };
+        if self.songs[0].difficulties[0].diff > 0.0 {
+            for song in &mut self.songs{
+                song.difficulties.sort_by(|a, b| b.diff.total_cmp(&a.diff))
+            }
+
+            self.songs.sort_by(|a,b| b.difficulties[0].diff.total_cmp(&a.difficulties[0].diff))
+        }
+        else{
+            for song in &mut self.songs{
+                song.difficulties.sort_by(|a, b| a.diff.total_cmp(&b.diff))
+            }
+
+            self.songs.sort_by(|a,b| a.difficulties[0].diff.total_cmp(&b.difficulties[0].diff))
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
