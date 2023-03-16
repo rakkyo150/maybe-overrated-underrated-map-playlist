@@ -1,6 +1,6 @@
 use reqwest::header::{HeaderValue, AUTHORIZATION};
 use dotenv::dotenv;
-use type_info::Difficulties;
+use map_and_playlist::Difficulties;
 use std::env;
 use serde_json::json;
 use std::fs::File;
@@ -9,7 +9,7 @@ use std::thread;
 use std::time::Duration;
 use serde_json::value::Value;
 
-mod type_info;
+mod map_and_playlist;
 
 fn main() -> eyre::Result<()>{
     dotenv()?;
@@ -29,15 +29,15 @@ fn main() -> eyre::Result<()>{
     Ok(())
 }
 
-fn get_predicted_values_and_classify_data(mut csv_rdr: csv::Reader<reqwest::blocking::Response>) -> Result<type_info::Playlists, eyre::ErrReport> {
+fn get_predicted_values_and_classify_data(mut csv_rdr: csv::Reader<reqwest::blocking::Response>) -> Result<map_and_playlist::Playlists, eyre::ErrReport> {
     let mut previous_hash = String::new();
     let mut json_result=json!(0);
 
-    let mut playlists = type_info::Playlists::new();
+    let mut playlists = map_and_playlist::Playlists::new();
 
 
     for record_result in csv_rdr.records() {
-        let record: type_info::MapData = match record_result{
+        let record: map_and_playlist::MapData = match record_result{
             Ok(val) => {
                 val.deserialize(None)?
             },
@@ -64,10 +64,10 @@ fn get_predicted_values_and_classify_data(mut csv_rdr: csv::Reader<reqwest::bloc
     Ok(playlists)
 }
 
-fn add_difficulties_to_playlists(playlists: &mut type_info::Playlists, record: &type_info::MapData, difficulties: type_info::Difficulties){
+fn add_difficulties_to_playlists(playlists: &mut map_and_playlist::Playlists, record: &map_and_playlist::MapData, difficulties: map_and_playlist::Difficulties){
     let (overrated_playlist, underrated_playlist) = playlists.search_playlist_set(&record.stars).unwrap();
 
-    let targeted_playlist: &mut type_info::Playlist;
+    let targeted_playlist: &mut map_and_playlist::Playlist;
 
     if 0.0 <= difficulties.diff && difficulties.diff < 0.5{
         targeted_playlist = &mut overrated_playlist.a_little_version;
@@ -91,7 +91,7 @@ fn add_difficulties_to_playlists(playlists: &mut type_info::Playlists, record: &
     match targeted_playlist.search_songs(record.name.as_str(), record.hash.as_str()){
         Some(targeted_songs) => targeted_songs.difficulties.push(difficulties),
         None => {
-            let tmp_song = type_info::Songs{
+            let tmp_song = map_and_playlist::Songs{
                 songName: record.name.to_string(),
                 difficulties: vec![difficulties],
                 hash: record.hash.to_string()
@@ -101,7 +101,7 @@ fn add_difficulties_to_playlists(playlists: &mut type_info::Playlists, record: &
     }
 }
 
-fn make_playlists(playlists: &mut type_info::Playlists) -> Result<(), eyre::ErrReport> {
+fn make_playlists(playlists: &mut map_and_playlist::Playlists) -> Result<(), eyre::ErrReport> {
     for index in 0..15{
         let (overrated_playlist,underrated_playlist) = playlists.search_playlist_set(&(index as f64)).unwrap();
         let a_little_overrated_playlist_name = format!("./a_little_overrated_playlist_{}.json", index);
@@ -121,7 +121,7 @@ fn make_playlists(playlists: &mut type_info::Playlists) -> Result<(), eyre::ErrR
     Ok(())
 }
 
-fn make_playlist(playlist: &type_info::Playlist, playlist_name: String) -> Result<(), eyre::ErrReport> {
+fn make_playlist(playlist: &map_and_playlist::Playlist, playlist_name: String) -> Result<(), eyre::ErrReport> {
     let serialized_playlist = serde_json::to_string_pretty(playlist)?;
     let mut file = File::create(playlist_name)?;
     file.write_all(serialized_playlist.as_bytes())?;
@@ -143,7 +143,7 @@ fn make_csv_reader(release_url: &str, auth_value: &HeaderValue) -> csv::Reader<r
 }
 
 
-fn make_difficulties(record: &type_info::MapData, json_result: &Value) -> Result<Difficulties, String> {
+fn make_difficulties(record: &map_and_playlist::MapData, json_result: &Value) -> Result<Difficulties, String> {
     let predicted_values = match record.difficulty.as_str() {
         "Easy" => json_result["Standard-Easy"].as_f64(),
         "Normal" => json_result["Standard-Normal"].as_f64(),
@@ -155,7 +155,7 @@ fn make_difficulties(record: &type_info::MapData, json_result: &Value) -> Result
 
     match predicted_values {
         Some(value) => {
-            let difficulties = type_info::Difficulties{
+            let difficulties = map_and_playlist::Difficulties{
                 name: record.difficulty.to_string(),
                 characteristic: record.characteristic.to_string(),
                 diff: record.stars - value
@@ -166,7 +166,7 @@ fn make_difficulties(record: &type_info::MapData, json_result: &Value) -> Result
     };
 }
 
-fn get_predicted_values(record: &type_info::MapData) -> Value {
+fn get_predicted_values(record: &map_and_playlist::MapData) -> Value {
     let url = format!("https://predictstarnumber.onrender.com/api2/hash/{}", record.hash);
 
     // サーバーの再起動が結構長いので
