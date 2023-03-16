@@ -67,8 +67,8 @@ pub struct MapData{
 #[derive(Debug, Serialize)]
 #[allow(non_snake_case)]
 pub struct Playlists{
-    pub overrated_playlist: [Playlist; 15],
-    pub underrated_playlist: [Playlist; 15],
+    pub overrated_playlist: [PlaylistSet; 15],
+    pub underrated_playlist: [PlaylistSet; 15],
 }
 
 impl Playlists {
@@ -84,7 +84,7 @@ impl Playlists {
         playlists
     }
 
-    pub fn search_playlist(&mut self, rank: &f64) -> Result<(&mut Playlist, &mut Playlist), String> {
+    pub fn search_playlist_set(&mut self, rank: &f64) -> Result<(&mut PlaylistSet, &mut PlaylistSet), String> {
         let rank_i32 = rank.floor() as i32;
         if 0 <= rank_i32 && rank_i32 < 15 {
             Ok((&mut self.overrated_playlist[*rank as usize], &mut self.underrated_playlist[*rank as usize]))
@@ -94,18 +94,36 @@ impl Playlists {
     }
 }
 
-fn make_playlist_array(playlist_base_name: &str) -> [Playlist; 15] {
+fn make_playlist_array(playlist_base_name: &str) -> [PlaylistSet; 15] {
     // https://tyfkda.github.io/blog/2020/03/19/rust-init-array.html
     // PlaylistにCopyトレイトが実装されていないので[要素; 要素数]が使えない
     const LEN: usize = 15;
     // 未初期化の領域を確保
-    let mut unsafe_overrated_playlist: [MaybeUninit<Playlist>; LEN] = unsafe { MaybeUninit::uninit().assume_init() };
-    for (i, slot) in unsafe_overrated_playlist.iter_mut().enumerate() {
+    let mut unsafe_playlist: [MaybeUninit<PlaylistSet>; LEN] = unsafe { MaybeUninit::uninit().assume_init() };
+    for (i, slot) in unsafe_playlist.iter_mut().enumerate() {
         // 初期化する
-        *slot = MaybeUninit::new(Playlist {playlistTitle: format!("{} {}★", playlist_base_name, i), songs: vec![] });
+        *slot = MaybeUninit::new(PlaylistSet::new(format!("{} {}★", playlist_base_name, i)));
     }
-    let overrated_playlists = unsafe{ std::mem::transmute::<_, [Playlist; LEN]>(unsafe_overrated_playlist) };
-    overrated_playlists
+    let playlists = unsafe{ std::mem::transmute::<_, [PlaylistSet; LEN]>(unsafe_playlist) };
+    playlists
+}
+
+#[derive(Debug, Serialize)]
+#[allow(non_snake_case)]
+pub struct PlaylistSet{
+    pub a_little_version: Playlist,
+    pub fairly_version: Playlist,
+    pub very_version: Playlist
+}
+
+impl PlaylistSet{
+    pub fn new(playlist_base_title: String) -> PlaylistSet{
+        let a_little_version = Playlist { playlistTitle: format!("A Little {}", playlist_base_title), songs: vec![]};
+        let fairly_version = Playlist { playlistTitle: format!("Fairly {}", playlist_base_title), songs: vec![]};
+        let very_version = Playlist { playlistTitle: format!("Very {}", playlist_base_title), songs: vec![]};
+
+        PlaylistSet { a_little_version, fairly_version, very_version }
+    }
 }
 
 #[derive(Debug, Serialize)]
