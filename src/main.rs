@@ -38,18 +38,22 @@ fn get_predicted_values_and_classify_data(mut csv_rdr: csv::Reader<reqwest::bloc
 
     let mut playlists = map_and_playlist::Playlists::new();
 
-
+    // csv_rdrから直接for文回すと、なぜかrequest or response body error: error reading a body from connection: end of file before message length reachedエラーに偶に遭遇することがあるので、一旦全データを確保しておく
+    let mut record_container: Vec<map_and_playlist::MapData> = vec![];
     for record_result in csv_rdr.records() {
-        let record: map_and_playlist::MapData = match record_result{
+        match record_result{
             Ok(val) => {
-                val.deserialize(None)?
+                record_container.push(val.deserialize(None)?)
             },
             Err(e)=>{
                 println!("Failed to deserialize csv: {}", e);
                 continue;
             }
         };
+    }
 
+    for record in record_container
+    {
         if previous_hash != record.hash{
             println!("index-{}, hash-{}", record.index, record.hash);
             json_result = get_predicted_values(&record);
