@@ -73,27 +73,12 @@ pub struct Playlists{
 
 impl Playlists {
     pub fn new() -> Playlists{
-        // https://tyfkda.github.io/blog/2020/03/19/rust-init-array.html
-        // PlaylistにCopyトレイトが実装されていないので[要素; 要素数]が使えない
-        const LEN: usize = 15;
-        // 未初期化の領域を確保
-        let mut unsafe_overrated_playlist: [MaybeUninit<Playlist>; LEN] = unsafe { MaybeUninit::uninit().assume_init() };
-        for (i, slot) in unsafe_overrated_playlist.iter_mut().enumerate() {
-            // 初期化する
-            *slot = MaybeUninit::new(Playlist {playlistTitle: format!("Overrated Playlist {}★", i), songs: vec![] });
-        }
-        let overrated_playlists = unsafe{ std::mem::transmute::<_, [Playlist; LEN]>(unsafe_overrated_playlist) };
-
-        let mut unsafe_underrated_playlist: [MaybeUninit<Playlist>; LEN] = unsafe { MaybeUninit::uninit().assume_init() };
-        for (i, slot) in unsafe_underrated_playlist.iter_mut().enumerate() {
-            // 初期化する
-            *slot = MaybeUninit::new(Playlist {playlistTitle: format!("Underrated Playlist {}★", i), songs: vec![] });
-        }
-        let underrated_playlists = unsafe{ std::mem::transmute::<_, [Playlist; LEN]>(unsafe_underrated_playlist) };
+        let overrated_playlist = make_playlist_array("Overrated Playlist");
+        let underrated_playlist = make_playlist_array("Underrated Playlist");
 
         let playlists = Playlists {
-            overrated_playlist: overrated_playlists,
-            underrated_playlist: underrated_playlists,
+            overrated_playlist,
+            underrated_playlist,
         };
 
         playlists
@@ -107,6 +92,20 @@ impl Playlists {
             Err(String::from("No rank number"))
         }
     }
+}
+
+fn make_playlist_array(playlist_base_name: &str) -> [Playlist; 15] {
+    // https://tyfkda.github.io/blog/2020/03/19/rust-init-array.html
+    // PlaylistにCopyトレイトが実装されていないので[要素; 要素数]が使えない
+    const LEN: usize = 15;
+    // 未初期化の領域を確保
+    let mut unsafe_overrated_playlist: [MaybeUninit<Playlist>; LEN] = unsafe { MaybeUninit::uninit().assume_init() };
+    for (i, slot) in unsafe_overrated_playlist.iter_mut().enumerate() {
+        // 初期化する
+        *slot = MaybeUninit::new(Playlist {playlistTitle: format!("{} {}★", playlist_base_name, i), songs: vec![] });
+    }
+    let overrated_playlists = unsafe{ std::mem::transmute::<_, [Playlist; LEN]>(unsafe_overrated_playlist) };
+    overrated_playlists
 }
 
 #[derive(Debug, Serialize)]
@@ -133,17 +132,6 @@ pub struct Songs{
     pub songName: String,
     pub difficulties: Vec<Difficulties>,
     pub hash: String,
-}
-
-impl Songs{
-    pub fn search_difficulties(&mut self, difficulty_name: &str) -> Option<&mut Difficulties>{
-        for value in &mut self.difficulties{
-            if value.name == difficulty_name.to_string(){
-                return Some(value);
-            }
-        }
-        None
-    }
 }
 
 #[derive(Debug, Serialize, Clone)]
