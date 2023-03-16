@@ -4,10 +4,12 @@ use map_and_playlist::Difficulties;
 use std::env;
 use serde_json::json;
 use std::fs::File;
-use std::io::Write;
+use std::io::{Error, ErrorKind, Read, Write};
 use std::thread;
 use std::time::Duration;
 use serde_json::value::Value;
+use std::path::Path;
+use zip::write::{FileOptions, ZipWriter};
 
 mod map_and_playlist;
 
@@ -102,6 +104,8 @@ fn add_difficulties_to_playlists(playlists: &mut map_and_playlist::Playlists, re
 }
 
 fn make_playlists(playlists: &mut map_and_playlist::Playlists) -> Result<(), eyre::ErrReport> {
+    let mut file_paths: Vec<String> = vec![];
+
     for index in 0..15{
         let (overrated_playlist,underrated_playlist) = playlists.search_playlist_set(&(index as f64)).unwrap();
         let a_little_overrated_playlist_name = format!("./a_little_overrated_playlist_{}.json", index);
@@ -111,20 +115,57 @@ fn make_playlists(playlists: &mut map_and_playlist::Playlists) -> Result<(), eyr
         let fairly_underrated_playlist_name = format!("./fairly_underrated_playlist_{}.json", index);
         let very_underrated_playlist_name = format!("./very_underrated_playlist_{}.json", index);
 
-        make_playlist(&overrated_playlist.a_little_version, a_little_overrated_playlist_name)?;
-        make_playlist(&overrated_playlist.fairly_version, fairly_overrated_playlist_name)?;
-        make_playlist(&overrated_playlist.very_version, very_overrated_playlist_name)?;
-        make_playlist(&underrated_playlist.a_little_version, a_little_underrated_playlist_name)?;
-        make_playlist(&underrated_playlist.fairly_version, fairly_underrated_playlist_name)?;
-        make_playlist(&underrated_playlist.very_version, very_underrated_playlist_name)?;
+        make_playlist(&overrated_playlist.a_little_version, &a_little_overrated_playlist_name)?;
+        make_playlist(&overrated_playlist.fairly_version, &fairly_overrated_playlist_name)?;
+        make_playlist(&overrated_playlist.very_version, &very_overrated_playlist_name)?;
+        make_playlist(&underrated_playlist.a_little_version, &a_little_underrated_playlist_name)?;
+        make_playlist(&underrated_playlist.fairly_version, &fairly_underrated_playlist_name)?;
+        make_playlist(&underrated_playlist.very_version, &very_underrated_playlist_name)?;
+
+        file_paths.extend(vec![a_little_overrated_playlist_name, fairly_overrated_playlist_name, very_overrated_playlist_name, a_little_underrated_playlist_name, fairly_underrated_playlist_name, very_underrated_playlist_name]);
+    }
+
+    let zip_file_path = "./all.zip";
+
+    if let Err(error) = create_zip(&file_paths, zip_file_path) {
+        println!("Error: {:?}", error);
+    } else {
+        println!("Archive created successfully.")
     }
     Ok(())
 }
 
-fn make_playlist(playlist: &map_and_playlist::Playlist, playlist_name: String) -> Result<(), eyre::ErrReport> {
+fn make_playlist(playlist: &map_and_playlist::Playlist, playlist_name: &String) -> Result<(), eyre::ErrReport> {
     let serialized_playlist = serde_json::to_string_pretty(playlist)?;
     let mut file = File::create(playlist_name)?;
     file.write_all(serialized_playlist.as_bytes())?;
+    Ok(())
+}
+
+fn create_zip(file_paths: &[String], zip_file_path: &str) -> Result<(), Error> {
+    let zip_path = Path::new(zip_file_path);
+    let file = match File::create(&zip_path) {
+        Ok(file) => file,
+        Err(e) => return Err(Error::new(ErrorKind::Other, format!("Could not create the zip file: {}", e))),
+    };
+    let mut zip = ZipWriter::new(file);
+
+    for file_path in file_paths {
+        let single_file_path = Path::new(file_path);
+        let mut file = match File::open(&single_file_path) {
+            Ok(file) => file,
+            Err(e) => return Err(Error::new(ErrorKind::Other, format!("Unable to open {}. Reason: {}", file_path, e)))
+        };
+        let mut contents = vec![];
+        let _ = file.read_to_end(&mut contents);
+
+        let options = FileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated)
+            .unix_permissions(0o755);
+
+        zip.start_file(single_file_path.to_string_lossy().to_string(), options)?;
+        let _ = zip.write_all(&contents);
+    }
     Ok(())
 }
 
