@@ -15,7 +15,10 @@ use std::result::Result;
 mod map_and_playlist;
 
 fn main() -> eyre::Result<()>{
-    dotenv()?;
+    let path = Path::new("./.env");
+    if path.exists() {
+        dotenv()?;
+    }
     
     let token = env::var("GITHUB_TOKEN")?;
 

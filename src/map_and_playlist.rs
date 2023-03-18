@@ -134,9 +134,9 @@ pub struct Playlist{
 }
 
 impl Playlist{
-    pub fn search_songs(&mut self, songName: &str, hash: &str) -> Option<&mut Songs>{
+    pub fn search_songs(&mut self, song_name: &str, hash: &str) -> Option<&mut Songs>{
         for value in &mut self.songs {
-            if value.songName == songName.to_string() && value.hash == hash.to_string(){
+            if value.songName == song_name.to_string() && value.hash == hash.to_string(){
                 return Some(value);
             }
         }
