@@ -18,8 +18,8 @@ jobs:
         toolchain: stable
 
     - name: Generate version file
-        run: |
-          echo `date +%Y%m%d%H%M%S` > version.txt
+      run: |
+        echo `date +%Y%m%d%H%M%S` > version.txt
 
     - name: Auto Commit
       uses: stefanzweifel/git-auto-commit-action@v3.0.0
@@ -34,15 +34,15 @@ jobs:
         TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Release
-        run: |
-          set -x
-          assets=()
-          assets+=("-a" "./*playlist*.json")
-          assets+=("-a" "./all.zip")
-          tag_name=`date '+%Y%m%d%H%M'`
-          hub release create "${assets[@]}" -m "Latest" "$tag_name"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        set -x
+        assets=()
+        assets+=("-a" "./*playlist*.json")
+        assets+=("-a" "./all.zip")
+        tag_name=`date '+%Y%m%d%H%M'`
+        hub release create "${assets[@]}" -m "Latest" "$tag_name"
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Cleanup
       uses: dev-drprasad/delete-older-releases@v0.2.0
