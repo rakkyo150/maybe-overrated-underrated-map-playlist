@@ -1,0 +1,53 @@
+name: Rust Build and Release
+on:
+  schedule:
+    - cron: "0 3 * * *"
+
+jobs:
+  build-and-release:
+    name: Build and Release
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v2
+
+    - name: Setup Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+
+    - name: Generate version file
+        run: |
+          echo `date +%Y%m%d%H%M%S` > version.txt
+
+    - name: Auto Commit
+      uses: stefanzweifel/git-auto-commit-action@v3.0.0
+      with:
+        commit_message: Auto Commit
+
+    - name: Generate Playlists
+      run: |
+        cargo build --release
+        cargo run
+      env:
+        TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Release
+        run: |
+          set -x
+          assets=()
+          assets+=("-a" "./*playlist*.json")
+          assets+=("-a" "./all.zip")
+          tag_name=`date '+%Y%m%d%H%M'`
+          hub release create "${assets[@]}" -m "Latest" "$tag_name"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Cleanup
+      uses: dev-drprasad/delete-older-releases@v0.2.0
+      with:
+        keep_latest: 1
+        delete_tags: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
