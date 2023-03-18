@@ -33,13 +33,13 @@ jobs:
         cargo build --release
         cargo run
       env:
-        TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Release
       run: |
         set -x
         assets=()
-        assets+=("-a" "./*playlist*.json")
+        assets+=("-a" ./*playlist*.json)
         assets+=("-a" "./all.zip")
         tag_name=`date '+%Y%m%d%H%M'`
         hub release create "${assets[@]}" -m "Latest" "$tag_name"
