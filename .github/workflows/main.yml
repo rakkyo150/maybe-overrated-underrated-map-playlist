@@ -39,7 +39,9 @@ jobs:
       run: |
         set -x
         assets=()
-        assets+=("-a" ./*playlist*.json)
+        for file in ./*playlist*.json; do
+          assets+=("-a" "$file")
+        done
         assets+=("-a" "./all.zip")
         tag_name=`date '+%Y%m%d%H%M'`
         hub release create "${assets[@]}" -m "Latest" "$tag_name"
