@@ -12,4 +12,5 @@ eyre = "0.6.8"
 reqwest = { version = "0.11.9", features = ["json", "blocking"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.94"
+tract-onnx = "0.20.7"
 zip = "0.6.4"

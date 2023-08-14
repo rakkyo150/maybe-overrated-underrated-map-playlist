@@ -1,16 +1,21 @@
 use reqwest::header::{HeaderValue, AUTHORIZATION};
 use dotenv::dotenv;
 use map_and_playlist::Difficulties;
+use tract_onnx::onnx;
+use tract_onnx::prelude::{Framework, InferenceFact, tvec, InferenceModelExt, Tensor};
+use tract_onnx::tract_hir::tract_ndarray::Array2;
+use std::collections::HashMap;
 use std::env;
 use serde_json::json;
 use std::fs::File;
-use std::io::{Error, ErrorKind, Read, Write};
-use std::thread;
-use std::time::Duration;
+use std::io::{Error, ErrorKind, Read, Write, BufReader};
 use serde_json::value::Value;
 use std::path::Path;
 use zip::write::{FileOptions, ZipWriter};
 use std::result::Result;
+use tract_onnx::prelude::Datum;
+
+use crate::map_and_playlist::MapData;
 
 mod map_and_playlist;
 
@@ -37,7 +42,6 @@ fn main() -> eyre::Result<()>{
 
 fn get_predicted_values_and_classify_data(mut csv_rdr: csv::Reader<reqwest::blocking::Response>) -> Result<map_and_playlist::Playlists, eyre::ErrReport> {
     let mut previous_hash = String::new();
-    let mut json_result=json!(0);
 
     let mut playlists = map_and_playlist::Playlists::new();
 
@@ -55,20 +59,36 @@ fn get_predicted_values_and_classify_data(mut csv_rdr: csv::Reader<reqwest::bloc
         };
     }
 
-    for record in record_container
+    let mut model_buf: Vec<u8> = Vec::new();
+    let mut dictionary = HashMap::new();
+    
+    for (index , record) in record_container.iter().enumerate()
     {
-        if previous_hash != record.hash{
-            println!("index-{}, hash-{}", record.index, record.hash);
-            json_result = get_predicted_values(&record);
+        if index == record_container.len() - 1 {
+            dictionary_insert(&record, &mut dictionary, &mut model_buf);
+            let difficulties = make_difficulties(&record, json!(dictionary));
+            match difficulties {
+                Ok(value) => add_difficulties_to_playlists(&mut playlists, &record, value),
+                Err(e) => println!("Failed to make difficulties: {}", e)
+            }
+        } else if previous_hash == record.hash || previous_hash.is_empty() {
+            dictionary_insert(&record, &mut dictionary, &mut model_buf);
+        } else {
+            let difficulties = make_difficulties(&record, json!(dictionary));
+            match difficulties {
+                Ok(value) => add_difficulties_to_playlists(&mut playlists, &record, value),
+                Err(e) => println!("Failed to make difficulties: {}", e)
+            }
+            dictionary_insert(&record, &mut dictionary, &mut model_buf);
         }
-
-        let difficulties = make_difficulties(&record, &json_result);
-        match difficulties {
-            Ok(value) => add_difficulties_to_playlists(&mut playlists, &record, value),
-            Err(e) => println!("Failed to make difficulties: {}", e)
+        
+        previous_hash = record.hash.to_owned();
+        
+        fn dictionary_insert(record: &MapData, dictionary: &mut HashMap<String, f64>, model_buf: &mut Vec<u8>) {
+            println!("index-{}, hash-{}, difficulty-{}", record.index, record.hash, record.difficulty);
+            let predicted_value = get_predicted_values(&record, model_buf);
+            dictionary.insert(format!("{}-{}", record.characteristic, record.difficulty), predicted_value);
         }
-
-        previous_hash = record.hash;
 
         // break;
     }
@@ -204,7 +224,7 @@ fn make_csv_reader(release_url: &str, auth_value: &HeaderValue) -> csv::Reader<r
 }
 
 
-fn make_difficulties(record: &map_and_playlist::MapData, json_result: &Value) -> Result<Difficulties, String> {
+fn make_difficulties(record: &map_and_playlist::MapData, json_result: Value) -> Result<Difficulties, String> {
     let predicted_values = match record.difficulty.as_str() {
         "Easy" => json_result["Standard-Easy"].as_f64(),
         "Normal" => json_result["Standard-Normal"].as_f64(),
@@ -227,22 +247,77 @@ fn make_difficulties(record: &map_and_playlist::MapData, json_result: &Value) ->
     };
 }
 
-fn get_predicted_values(record: &map_and_playlist::MapData) -> Value {
-    let url = format!("https://predictstarnumber.onrender.com/api2/hash/{}", record.hash);
+fn get_predicted_values(record: &map_and_playlist::MapData, model_buf: &mut Vec<u8> ) -> f64 {
+    if model_buf.len() == 0 {
+        println!("load model");
+        *model_buf = load_model().unwrap();
+    }
+    let model = onnx().model_for_read(&mut BufReader::new(&model_buf[..]))
+        .unwrap()
+        .with_input_fact(0, InferenceFact::dt_shape(f64::datum_type(), tvec![1, 15]))
+        .unwrap()
+        .with_output_fact(0, InferenceFact::dt_shape(f64::datum_type(), tvec![1, 1]))
+        .unwrap()
+        .into_optimized()
+        .unwrap()
+        .into_runnable()
+        .unwrap();
 
-    // サーバーの再起動が結構長いので
-    let client = reqwest::blocking::Client::builder().timeout(Duration::from_secs(300)).build().unwrap();
-        
-    thread::sleep(Duration::from_secs(1));
-    let response = match client.get(url).send() {
+    let difficulties = match record.difficulty.as_str() {
+        "Easy" => 0.0,
+        "Normal" => 1.0,
+        "Hard" => 2.0,
+        "Expert" => 3.0,
+        "ExpertPlus" => 4.0,
+        _ => 0.0
+    };
+    let sage_score = record.sageScore.parse().unwrap_or_else(|_err| {
+        0.0
+    });
+    let chroma = if record.chroma == "True" {
+        1.0
+    } else {
+        0.0
+    };
+
+    // Create an input Tensor
+    let data: Vec<f64> = vec![record.bpm, record.duration, difficulties, sage_score ,record.njs , record.offset ,record.notes as f64, record.bombs as f64, record.obstacles as f64, record.nps, record.events, chroma, record.errors as f64, record.warns as f64, record.resets as f64];
+    let shape = [1, 15];
+    let input = Tensor::from(Array2::<f64>::from_shape_vec(shape, data).unwrap());
+
+    // Run the model
+    let outputs = model.run(tvec!(input.into())).unwrap();
+    
+    // Extract the output tensor
+    let output_tensor = &outputs[0];
+    
+    // Extract the result values
+    let result = output_tensor.to_array_view::<f64>().unwrap();
+    println!("result: {:?}", result);
+    let predicted_value = result[[0, 0]];
+    println!("predicted_value: {}", predicted_value);
+
+    predicted_value
+}
+
+
+fn load_model() -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let token = env::var("GITHUB_TOKEN")?;
+    let auth_value = HeaderValue::from_str(&format!("Bearer {}", token))?;
+    let model_asset_endpoint = "https://github.com/rakkyo150/PredictStarNumberHelper/releases/latest/download/model.onnx";
+    let client = reqwest::blocking::Client::new();
+    let mut model_asset_response= match client.get(model_asset_endpoint).header(AUTHORIZATION, auth_value).send() {
         Ok(response) => response,
         Err(e) => panic!("Error: {}", e),
     };
+    let mut buf = Vec::new();
+    model_asset_response.read_to_end(&mut buf)?;
 
-    let json_result = response.json::<serde_json::Value>().unwrap_or_else(|err| {
-        eprintln!("Failed to deserialize json: {:?}", err.to_string());
-        std::process::exit(1);
-    });
+    /*
+    let model_file_path = Path::new("model.pickle");
+    let mut model_file = File::create(model_file_path)?;
+    model_file.write_all(&buf)?;
+    */
 
-    json_result
+    Ok(buf)
 }
