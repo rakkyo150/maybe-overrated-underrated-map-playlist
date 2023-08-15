@@ -15,8 +15,6 @@ use zip::write::{FileOptions, ZipWriter};
 use std::result::Result;
 use tract_onnx::prelude::Datum;
 
-use crate::map_and_playlist::MapData;
-
 mod map_and_playlist;
 
 fn main() -> eyre::Result<()>{
@@ -41,8 +39,6 @@ fn main() -> eyre::Result<()>{
 }
 
 fn get_predicted_values_and_classify_data(mut csv_rdr: csv::Reader<reqwest::blocking::Response>) -> Result<map_and_playlist::Playlists, eyre::ErrReport> {
-    let mut previous_hash = String::new();
-
     let mut playlists = map_and_playlist::Playlists::new();
 
     // csv_rdrから直接for文回すと、なぜかrequest or response body error: error reading a body from connection: end of file before message length reachedエラーに偶に遭遇することがあるので、一旦全データを確保しておく
@@ -60,37 +56,19 @@ fn get_predicted_values_and_classify_data(mut csv_rdr: csv::Reader<reqwest::bloc
     }
 
     let mut model_buf: Vec<u8> = Vec::new();
-    let mut dictionary = HashMap::new();
+    let mut characteristic_difficulty_and_predicted_value = HashMap::new();
     
-    for (index , record) in record_container.iter().enumerate()
+    for record in record_container
     {
-        if index == record_container.len() - 1 {
-            dictionary_insert(&record, &mut dictionary, &mut model_buf);
-            let difficulties = make_difficulties(&record, json!(dictionary));
-            match difficulties {
-                Ok(value) => add_difficulties_to_playlists(&mut playlists, &record, value),
-                Err(e) => println!("Failed to make difficulties: {}", e)
-            }
-        } else if previous_hash == record.hash || previous_hash.is_empty() {
-            dictionary_insert(&record, &mut dictionary, &mut model_buf);
-        } else {
-            let difficulties = make_difficulties(&record, json!(dictionary));
-            match difficulties {
-                Ok(value) => add_difficulties_to_playlists(&mut playlists, &record, value),
-                Err(e) => println!("Failed to make difficulties: {}", e)
-            }
-            dictionary_insert(&record, &mut dictionary, &mut model_buf);
-        }
-        
-        previous_hash = record.hash.to_owned();
-        
-        fn dictionary_insert(record: &MapData, dictionary: &mut HashMap<String, f64>, model_buf: &mut Vec<u8>) {
-            println!("index-{}, hash-{}, difficulty-{}", record.index, record.hash, record.difficulty);
-            let predicted_value = get_predicted_values(&record, model_buf);
-            dictionary.insert(format!("{}-{}", record.characteristic, record.difficulty), predicted_value);
-        }
+        println!("index-{}, hash-{}, difficulty-{}", record.index, record.hash, record.difficulty);
+        let predicted_value = get_predicted_values(&record, &mut model_buf);
+        characteristic_difficulty_and_predicted_value.insert(format!("{}-{}", record.characteristic, record.difficulty), predicted_value);
 
-        // break;
+        let difficulties = make_difficulties(&record, json!(characteristic_difficulty_and_predicted_value));
+        match difficulties {
+            Ok(value) => add_difficulties_to_playlists(&mut playlists, &record, value),
+            Err(e) => println!("Failed to make difficulties: {}", e)
+        };
     }
 
     Ok(playlists)
@@ -241,6 +219,7 @@ fn make_difficulties(record: &map_and_playlist::MapData, json_result: Value) -> 
                 characteristic: record.characteristic.to_string(),
                 diff: record.stars - value
             };
+            println!("difficulties: {:?}", difficulties);
             return Ok(difficulties)
         },
         None => return Err(format!("There is something wrong with {}", json_result))
