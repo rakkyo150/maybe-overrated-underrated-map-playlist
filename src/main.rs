@@ -4,7 +4,6 @@ use map_and_playlist::Difficulties;
 use tract_onnx::onnx;
 use tract_onnx::prelude::{Framework, InferenceFact, tvec, InferenceModelExt, Tensor};
 use tract_onnx::tract_hir::tract_ndarray::Array2;
-use std::collections::HashMap;
 use std::env;
 use serde_json::json;
 use std::fs::File;
@@ -56,15 +55,13 @@ fn get_predicted_values_and_classify_data(mut csv_rdr: csv::Reader<reqwest::bloc
     }
 
     let mut model_buf: Vec<u8> = Vec::new();
-    let mut characteristic_difficulty_and_predicted_value = HashMap::new();
     
     for record in record_container
     {
         println!("index-{}, hash-{}, difficulty-{}", record.index, record.hash, record.difficulty);
         let predicted_value = get_predicted_values(&record, &mut model_buf);
-        characteristic_difficulty_and_predicted_value.insert(format!("{}-{}", record.characteristic, record.difficulty), predicted_value);
 
-        let difficulties = make_difficulties(&record, json!(characteristic_difficulty_and_predicted_value));
+        let difficulties = make_difficulties(&record, json!({format!("{}-{}", record.characteristic, record.difficulty): predicted_value}));
         match difficulties {
             Ok(value) => add_difficulties_to_playlists(&mut playlists, &record, value),
             Err(e) => println!("Failed to make difficulties: {}", e)
