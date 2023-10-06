@@ -1,3 +1,5 @@
+![Build](https://github.com/rakkyo150/maybe-overrated-underrated-map-playlist/actions/workflows/main.yml/badge.svg)
+
 # maybe-overrated-underrated-map-playlist
 [PredictStarNumber](https://github.com/rakkyo150/PredictStarNumber)による星予測と実際の星予測の差ごとのプレイリストを星ごとに作成するリポジトリ
 
