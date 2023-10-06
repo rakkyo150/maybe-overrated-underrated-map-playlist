@@ -29,9 +29,9 @@ jobs:
         set -x
         assets=()
         for file in ./*playlist*.json; do
-          assets+=("-a" "$file")
+          assets+=("$file")
         done
-        assets+=("-a" "./all.zip")
+        assets+=("./all.zip")
         tag_name=`date '+%Y%m%d%H%M'`
         gh release create "$tag_name" "${assets[@]}" -t "Latest"
       env:
