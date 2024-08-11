@@ -6,11 +6,11 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-csv = "1.2.1"
+csv = "1.3.0"
 dotenv = "0.15.0"
-eyre = "0.6.8"
-reqwest = { version = "0.11.9", features = ["json", "blocking"] }
+eyre = "0.6.12"
+reqwest = { version = "0.11.27", features = ["json", "blocking"] }
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0.94"
-tract-onnx = "0.20.7"
-zip = "0.6.4"
+serde_json = "1.0.122"
+tract-onnx = "0.20.22"
+zip = "0.6.6"
