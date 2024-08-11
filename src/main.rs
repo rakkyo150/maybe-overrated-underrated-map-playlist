@@ -10,7 +10,7 @@ use std::fs::File;
 use std::io::{Error, ErrorKind, Read, Write, BufReader};
 use serde_json::value::Value;
 use std::path::Path;
-use zip::write::{FileOptions, ZipWriter};
+use zip::write::{ExtendedFileOptions, FileOptions, ZipWriter};
 use std::result::Result;
 use tract_onnx::prelude::Datum;
 
@@ -162,9 +162,9 @@ fn create_zip(file_paths: &[String], zip_file_path: &str) -> Result<(), Error> {
     };
     let mut zip = ZipWriter::new(file);
 
-    let options = FileOptions::default()
-            .compression_method(zip::CompressionMethod::Stored)
-            .unix_permissions(0o755);
+    let options: FileOptions<'_, ExtendedFileOptions> = FileOptions::default()
+                .compression_method(zip::CompressionMethod::Stored)
+                .unix_permissions(0o755);
 
     for file_path in file_paths {
         let single_file_path = Path::new(file_path);
@@ -175,7 +175,7 @@ fn create_zip(file_paths: &[String], zip_file_path: &str) -> Result<(), Error> {
         let mut contents = vec![];
         let _ = file.read_to_end(&mut contents);
 
-        zip.start_file(single_file_path.to_string_lossy()[2..].to_string(), options)?;
+        zip.start_file(single_file_path.to_string_lossy()[2..].to_string(), options.clone())?;
         let _ = zip.write_all(&contents);
     }
 
