@@ -13,4 +13,4 @@ reqwest = { version = "0.12.5", features = ["json", "blocking"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.122"
 tract-onnx = "0.21.6"
-zip = "2.1.6"
+zip = "4.6.1"
